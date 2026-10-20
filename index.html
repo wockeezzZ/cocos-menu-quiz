@@ -83,7 +83,22 @@ select option{background:var(--card)}
 .btn:hover{border-color:var(--accent)}
 .btn.know{background:var(--green);color:#0b1f12;border-color:var(--green)}
 .btn.dont{background:var(--red);color:#fff;border-color:var(--red)}
+.btn.skip{border-color:var(--accent);color:var(--accent)}
 .btn.prev{background:transparent}
+.bank{max-width:720px;margin:26px auto 0;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.bank-col{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+.bank-title{font-size:13px;font-weight:700;letter-spacing:.4px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.bank-title.know-title{color:var(--green)}
+.bank-title.dont-title{color:var(--red)}
+.bank-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto}
+.bank-item{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--card2);
+  border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:13px}
+.bank-item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bank-item .pr{color:var(--accent);white-space:nowrap;font-size:12px}
+.bank-item .mv{cursor:pointer;background:transparent;border:none;color:var(--muted);font-size:13px;padding:2px 4px}
+.bank-item .mv:hover{color:var(--text)}
+.bank-empty{font-size:12px;color:var(--muted);text-align:center;padding:12px 0}
+@media(max-width:600px){.bank{grid-template-columns:1fr}}
 .progress{max-width:720px;margin:0 auto 12px;font-size:12px;color:var(--muted);text-align:center}
 .bar{max-width:720px;margin:0 auto 16px;height:6px;background:var(--card2);border-radius:6px;overflow:hidden}
 .bar>div{height:100%;background:var(--accent);transition:width .3s}
@@ -163,6 +178,17 @@ select option{background:var(--card)}
       <button class="btn prev" id="fcPrev">← Назад</button>
       <button class="btn dont" id="fcDont">Ещё не знаю</button>
       <button class="btn know" id="fcKnow">Знаю ✓</button>
+      <button class="btn skip" id="fcNext">Вперёд →</button>
+    </div>
+    <div class="bank" id="fcBank">
+      <div class="bank-col">
+        <div class="bank-title know-title">✅ Знаю (<span id="fcKnownCount">0</span>)</div>
+        <div class="bank-list" id="fcKnownList"></div>
+      </div>
+      <div class="bank-col">
+        <div class="bank-title dont-title">🔁 Ещё не знаю (<span id="fcUnknownCount">0</span>)</div>
+        <div class="bank-list" id="fcUnknownList"></div>
+      </div>
     </div>
   </div>
 
@@ -410,6 +436,7 @@ function startFlash(){
   if(!state.filtered.length){ $('#flashCard').innerHTML='<p style="text-align:center;color:var(--muted)">Нет позиций.</p>'; return; }
   state.fOrder = shuffle(state.filtered.map((_,i)=>i));
   state.fIndex = 0; state.fKnown=new Set(); state.fUnknown=new Set();
+  renderBank();
   renderFlash();
 }
 
@@ -428,12 +455,53 @@ function renderFlash(){
   $('#barFill').style.width = (state.fIndex/n*100)+'%';
   $('#progress').textContent = 'Карточка '+(state.fIndex+1)+' из '+n;
   updateStats();
+  renderBank();
 }
 
 function renderFlashEnd(){
   $('#flashCard').innerHTML='<div class="end"><h2>Готово! 🎉</h2><p>Знаю: <b style="color:var(--green)">'+state.fKnown.size+
     '</b> · Повторить: <b style="color:var(--red)">'+state.fUnknown.size+'</b></p>'+
     '<button class="btn" data-restart="flash">Начать заново</button></div>';
+}
+
+// Render the "bank" of known / unknown cards
+function renderBank(){
+  const knownIdx = [...state.fKnown].sort((a,b)=>a-b);
+  const unknownIdx = [...state.fUnknown].sort((a,b)=>a-b);
+  const mkList = (arr, listEl, kind) => {
+    listEl.innerHTML = '';
+    if(!arr.length){
+      listEl.innerHTML = '<div class="bank-empty">Пока пусто</div>';
+      return;
+    }
+    arr.forEach(idx=>{
+      const p = state.filtered[idx];
+      if(!p) return;
+      const d = document.createElement('div');
+      d.className = 'bank-item';
+      d.innerHTML = '<span class="nm" title="'+p.name+'">'+p.name+'</span>'+
+        '<span class="pr">'+p.price+'</span>'+
+        '<button class="mv" data-idx="'+idx+'" data-kind="'+kind+'" title="Переместить в другой список">⇄</button>';
+      listEl.appendChild(d);
+    });
+  };
+  mkList(knownIdx, $('#fcKnownList'), 'know');
+  mkList(unknownIdx, $('#fcUnknownList'), 'dont');
+  $('#fcKnownCount').textContent = knownIdx.length;
+  $('#fcUnknownCount').textContent = unknownIdx.length;
+}
+
+// Move a card between known/unknown lists
+function toggleCardKind(idx){
+  if(state.fKnown.has(idx)){
+    state.fKnown.delete(idx);
+    state.fUnknown.add(idx);
+  } else if(state.fUnknown.has(idx)){
+    state.fUnknown.delete(idx);
+    state.fKnown.add(idx);
+  }
+  renderBank();
+  updateStats();
 }
 
 // ---------- BROWSE ----------
@@ -507,7 +575,13 @@ document.addEventListener('click', e=>{
   if(e.target.closest('#qTextSubmit')){ answerName(); return; }
   if(e.target.closest('#fcKnow')){ state.fKnown.add(state.fOrder[state.fIndex]); state.fIndex++; renderFlash(); return; }
   if(e.target.closest('#fcDont')){ state.fUnknown.add(state.fOrder[state.fIndex]); state.fIndex++; renderFlash(); return; }
+  if(e.target.closest('#fcNext')){ state.fIndex++; renderFlash(); return; }
   if(e.target.closest('#fcPrev')){ if(state.fIndex>0){ state.fIndex--; renderFlash(); } return; }
+  if(e.target.closest('.bank-item .mv')){
+    const idx = parseInt(e.target.closest('.bank-item .mv').dataset.idx);
+    toggleCardKind(idx);
+    return;
+  }
   if(e.target.closest('#flashCard') && e.target.closest('#fcInner')){
     // toggle flip only if not clicking a button
     if(!e.target.closest('button')) $('#fcInner').classList.toggle('flipped');
@@ -532,6 +606,7 @@ document.addEventListener('keydown', e=>{
     if(e.code==='ArrowLeft'){ if(state.fIndex>0){state.fIndex--;renderFlash();} }
     if(e.code==='ArrowRight'){ state.fKnown.add(state.fOrder[state.fIndex]); state.fIndex++; renderFlash(); }
     if(e.code==='KeyX'){ state.fUnknown.add(state.fOrder[state.fIndex]); state.fIndex++; renderFlash(); }
+    if(e.code==='ArrowUp'){ state.fIndex++; renderFlash(); } // skip forward
   }
 });
 
